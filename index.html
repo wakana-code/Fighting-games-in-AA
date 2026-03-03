@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🐰 熱血硬派ラビットくん (色修正版)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            color: white;
+            user-select: none;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 900px;
+            height: 650px;
+            box-shadow: 0 0 20px rgba(255, 204, 0, 0.3);
+            border: 4px solid #ffcc00;
+            border-radius: 8px;
+            background: #000;
+            outline: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UIオーバーレイ */
+        #uiLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* タイトル画面など */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 100;
+            pointer-events: auto;
+        }
+
+        .hidden { display: none !important; }
+
+        .title-logo {
+            font-size: 28px;
+            color: #ffcc00;
+            text-shadow: 4px 4px #ff6600;
+            white-space: pre;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .blink { animation: blink 1s infinite; }
+        @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+
+        /* HUD */
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .char-info { width: 350px; }
+        .bar-container {
+            height: 20px;
+            background: #333;
+            border: 2px solid #fff;
+            margin-bottom: 5px;
+            position: relative;
+        }
+        .hp-fill {
+            height: 100%;
+            background: linear-gradient(180deg, #0f0 0%, #080 100%);
+            transition: width 0.1s linear;
+        }
+        .hp-fill.danger { background: linear-gradient(180deg, #f00 0%, #800 100%); }
+        .sp-fill {
+            height: 100%;
+            background: linear-gradient(180deg, #0cf 0%, #069 100%);
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        #timerArea {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 24px;
+            text-shadow: 2px 2px #000;
+        }
+
+        /* ボタン */
+        button {
+            padding: 15px 40px;
+            font-size: 20px;
+            font-family: 'Courier New', monospace;
+            background: #ffcc00;
+            border: 4px solid #fff;
+            color: #000;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover { background: #ffee00; transform: scale(1.05); }
+
+        /* 操作説明 */
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 11px;
+            color: #888;
+            text-shadow: 1px 1px #000;
+            background: rgba(0,0,0,0.5);
+            padding: 5px;
+            border-radius: 4px;
+        }
+        
+        .key-hint {
+            color: #ffcc00;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer" tabindex="0">
+        <canvas id="gameCanvas" width="900" height="650"></canvas>
+
+        <!-- UIレイヤー -->
+        <div id="uiLayer">
+            <!-- HUD -->
+            <div id="hud" class="hidden">
+                <div class="char-info">
+                    <div style="text-shadow: 2px 2px #000;">🐰 ウサギ丸</div>
+                    <div class="bar-container"><div id="p-hp" class="hp-fill" style="width: 100%"></div></div>
+                    <div class="bar-container"><div id="p-sp" class="sp-fill"></div></div>
+                </div>
+                <div class="char-info" style="text-align: right;">
+                    <div id="e-name" style="text-shadow: 2px 2px #000;">ENEMY</div>
+                    <div class="bar-container"><div id="e-hp" class="hp-fill" style="width: 100%; float: right;"></div></div>
+                    <div class="bar-container"><div id="e-sp" class="sp-fill" style="float: right;"></div></div>
+                </div>
+            </div>
+
+            <div id="timerArea" class="hidden">
+                <div style="font-size: 14px; color: #fc0;">STAGE <span id="stageNum">1</span></div>
+                <div id="timer">99</div>
+            </div>
+
+            <!-- 操作説明 -->
+            <div id="controls">
+                <span class="key-hint">WASD</span>:移動/ジャンプ <span class="key-hint">J</span>:パンチ <span class="key-hint">K</span>:キック <span class="key-hint">L</span>:強 <span class="key-hint">SPACE</span>:ガード <span class="key-hint">T</span>:挑発<br>
+                必殺技: <span class="key-hint">↓+↘</span>+J / <span class="key-hint">↘</span>+K (↘は下と横を同時押し)
+            </div>
+        </div>
+
+        <!-- タイトル画面 -->
+        <div id="titleScreen" class="screen">
+            <div class="title-logo">
+╔═══════════════════════════════════╗
+║  🔥 熱 血 硬 派 🔥                ║
+║     ラ ビ ッ ト く ん              ║
+╚═══════════════════════════════════╝
+            </div>
+            <pre style="color:white; margin: 20px;">
+      ∧    ∧
+     | |  | |
+      ＼＼//    
+     /■■■\   
+    ( ☆ Y ☆ )  
+    > ´ ∀ ` <  
+     \  ω  /   
+      ─┬─     
+     ╱    ╲    
+            </pre>
+            <div class="blink" style="font-size: 24px; margin-top: 20px;">🎮 CLICK HERE & PRESS ENTER 🎮</div>
+            <div style="margin-top: 10px; font-size: 12px; color: #aaa;">(画面をクリックしてフォーカスしてください)</div>
+        </div>
+
+        <!-- リザルト画面 -->
+        <div id="resultScreen" class="screen hidden">
+            <h1 id="res-title" style="font-size: 48px; margin-bottom: 20px;">WIN</h1>
+            <pre id="res-aa" style="color:white; margin: 20px;"></pre>
+            <div id="res-stats" style="margin-bottom: 20px;"></div>
+            <button id="nextBtn">NEXT STAGE</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 定数・設定
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const GRAVITY = 0.8;
+        const GROUND_Y = 550; // Canvas座標での地面の高さ
+        const JUMP_FORCE = -18;
+        
+        // ==========================================
+        // AAデータ (スプライト)
+        // ==========================================
+        const SPRITES = {
+            rabbit: {
+                idle: [`  ∧    ∧\n | |  | |\n  ＼＼//\n /■■■\\\n( 　Y 　)\n> ^ . ^ <\n \\  ω  /\n  ─┬─\n ╱    ╲`, `  ∧    ∧\n | |  | | ☆\n  ＼＼//\n /■■■\\\n( 　Y 　)\n> ^ . ^ <\n \\  ω  /\n  ─┬─\n ╱    ╲`],
+                walk: [`  ∧    ∧\n | |  | |\n  ＼＼//\n /■■■\\\n( 　Y 　)\n> ^ . ^ <\n \\  ω  /\n  ╱─╲\n ╱    `, `  ∧    ∧\n | |  | |\n  ＼＼//\n /■■■\\\n( 　Y 　)\n> ^ . ^ <\n \\  ω  /\n  ╲─╱\n     ╲`],
+                jump: [`   ∧  ∧\n  | || |\n   ＼＼/\n  /■■\\\n (  Y  )\n > ◎◎ <\n  ( ω )\n ╱    ╲\n╱      ╲`],
+                attack: [`  ∧    ∧\n | |  | |\n  ＼＼//\n /■■■\\\n( 　Y 　)\n> ´д´ < \n ( ω )━☆\n  ─┬─\n ╱    ╲`],
+                kick: [`  ∧    ∧\n | |  | |\n  ＼＼//\n /■■■\\\n( 　Y 　)\n> ´皿´ <\n ( ω )\n  ┃────☆\n  ┃`],
+                special: [`  ∧    ∧\n |||  |||\n  ＼＼// ★\n /■■■\\☆\n( ☆Y☆ )\n> ´皿´ <\n ( ω )━━★\n  ─┬─\n ╱    ╲`],
+                damage: [`  ∧    ∧\n | |  | | \n  ＼＼// ★\n /■■■\\\n( 　Y 　)\n> × × <\n ( Д )\n  ─┬─╲\n ╱    ╲`],
+                win: [`   ★ ∧  ∧ ★\n  ☆ | || | ☆\n     ＼＼//\n    /■■■\\\n   ( ☆Y☆ )\n   > ´∀´ <\n   \\(ω)/\n     ─┬─\n    ╱    ╲`],
+                down: [`  ＿＿＿＿＿＿＿\n / ∧∧ ■■ \\\n  (;;)＿Y＿ ぐふ\n ￣￣￣￣￣￣￣`]
+            },
+            frog: {
+                idle: [`   ●　　●\n  (　◉◉　)\n   (　▽　)\n  ／￣￣￣\\\n ╱　ケロ　╲\n（　　　　　）\n  \\　　　／`],
+                attack: [`   ●　　●\n  (　◉◉　)\n   (　▽　)━━～\n  ／￣￣￣\\\n ╱　　　　╲`],
+                damage: [`   ●　　● ｹﾞｺ!\n  (　×　×)\n   (　Д　)★\n  ╱￣￣￣╲╲`]
+            },
+            bear: {
+                idle: [`    ╭━━━╮\n   (　╰д╯　)\n   ┃██████┃\n  ┃┃ 熊 ┃┃\n  ┃┃████┃┃\n   ╱    ╲\n  ╱      ╲`],
+                attack: [`    ╭━━━╮\n   (　\`皿´)━★★\n   ┃██████┃\n  ┃┃ 熊 ┃┃━\n  ┃┃████┃┃`],
+                damage: [`    ╭━━━╮\n   (　＞＜　) ｸﾞｵｯ\n   ┃██████┃★`]
+            },
+            dragon: {
+                idle: [`     🐲\n   ≋≋≋≋≋\n  ╭═════╮\n  │ 龍神 │ ﾌﾜ\n  ╰═════╯\n    ╱╲╱╲`],
+                attack: [`     🐲\n   ≋≋≋≋≋\n  ╭═════╮━━🔥\n  │ 龍神 │\n  ╰═════╯`],
+                damage: [`     🐲 ｸﾞｵ!?\n   ≋≋≋ ★\n  ╭═════╮ ╲\n  │ 龍神 │\n  ╰═════╯`]
+            }
+        };
+
+        const ENEMIES_DATA = [
+            { name: '🐸 カエル助', type: 'frog', hp: 100, color: '#8f8', ai: 'normal' },
+            { name: '🐻 クマ五郎', type: 'bear', hp: 150, color: '#a63', ai: 'power' },
+            { name: '🐲 龍神', type: 'dragon', hp: 200, color: '#fd0', ai: 'boss' }
+        ];
+
+        // ==========================================
+        // ゲーム状態管理
+        // ==========================================
+        const state = {
+            scene: 'title', // title, playing, result
+            stage: 0,
+            timer: 99,
+            frameCount: 0,
+            shake: 0,
+            flash: 0
+        };
+
+        const input = {
+            keys: {},
+            buffer: []
+        };
+
+        // ==========================================
+        // オブジェクト
+        // ==========================================
+        let player = {};
+        let enemy = {};
+        let projectiles = [];
+        let particles = [];
+        let texts = [];
+
+        // ==========================================
+        // 初期化・リセット
+        // ==========================================
+        function initGame() {
+            state.stage = 0;
+            startStage();
+        }
+
+        function startStage() {
+            const enemyData = ENEMIES_DATA[state.stage];
+            
+            player = {
+                x: 200, y: GROUND_Y, vx: 0, vy: 0,
+                hp: 100, maxHp: 100, sp: 0, maxSp: 100,
+                facing: 1, state: 'idle', 
+                frameTimer: 0, attackTimer: 0, hitTimer: 0,
+                width: 80, height: 100
+            };
+
+            enemy = {
+                x: 700, y: GROUND_Y, vx: 0, vy: 0,
+                hp: enemyData.hp, maxHp: enemyData.hp, sp: 0,
+                facing: -1, state: 'idle',
+                frameTimer: 0, attackTimer: 0, hitTimer: 0,
+                width: 80, height: 100,
+                type: enemyData.type,
+                name: enemyData.name,
+                color: enemyData.color,
+                ai: enemyData.ai,
+                aiTimer: 0
+            };
+
+            projectiles = [];
+            particles = [];
+            texts = [];
+            state.timer = 99;
+            state.scene = 'playing';
+
+            // UI更新
+            updateUI();
+            document.getElementById('titleScreen').classList.add('hidden');
+            document.getElementById('resultScreen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('timerArea').classList.remove('hidden');
+            document.getElementById('stageNum').innerText = state.stage + 1;
+            document.getElementById('e-name').innerText = enemy.name;
+            
+            document.getElementById('gameContainer').focus();
+
+            addFloatingText("ROUND " + (state.stage+1), 450, 300, 60, "#fff", 100);
+            setTimeout(() => addFloatingText("FIGHT!!", 450, 300, 80, "#f00", 50), 1500);
+        }
+
+        // ==========================================
+        // 入力処理
+        // ==========================================
+        const container = document.getElementById('gameContainer');
+        
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        function handleKeyDown(e) {
+            input.keys[e.code] = true;
+            if(state.scene === 'title' && e.code === 'Enter') initGame();
+            if(state.scene === 'playing') processCommand(e.code);
+        }
+
+        function handleKeyUp(e) {
+            input.keys[e.code] = false;
+        }
+
+        function isKeyPressed(code) {
+            return input.keys[code] === true;
+        }
+
+        function processCommand(code) {
+            const now = Date.now();
+            let dir = null;
+            
+            const up = isKeyPressed('KeyW') || isKeyPressed('ArrowUp');
+            const down = isKeyPressed('KeyS') || isKeyPressed('ArrowDown');
+            const left = isKeyPressed('KeyA') || isKeyPressed('ArrowLeft');
+            const right = isKeyPressed('KeyD') || isKeyPressed('ArrowRight');
+
+            if(down && right) dir = 'dr';
+            else if(down && left) dir = 'dl';
+            else if(right) dir = 'r';
+            else if(left) dir = 'l';
+            else if(down) dir = 'd';
+
+            if(dir) input.buffer.push({key: dir, time: now});
+            
+            if(code === 'KeyJ') { input.buffer.push({key: 'J', time: now}); checkSpecial(); }
+            if(code === 'KeyK') { input.buffer.push({key: 'K', time: now}); checkSpecial(); }
+            if(code === 'KeyL') { input.buffer.push({key: 'L', time: now}); checkSpecial(); }
+
+            input.buffer = input.buffer.filter(c => now - c.time < 500);
+        }
+
+        function checkSpecial() {
+            if(player.sp < 10) return;
+            const buf = input.buffer.map(c => c.key).join('');
+            
+            if(buf.endsWith('dJ')) castSkill('carrot');
+            else if(buf.endsWith('drK')) castSkill('spin');
+            else if(buf.endsWith('dL')) castSkill('upper');
+        }
+
+        function castSkill(type) {
+            player.sp -= 10;
+            player.state = 'special';
+            player.attackTimer = 40;
+            addFloatingText(type.toUpperCase() + "!", player.x, player.y - 80, 20, "#0ff");
+            
+            if(type === 'carrot') {
+                projectiles.push({
+                    x: player.x + 40 * player.facing, y: player.y - 40,
+                    vx: 12 * player.facing, vy: 0,
+                    emoji: '🥕', owner: 'player', damage: 15, life: 60
+                });
+            } else {
+                player.vx = 10 * player.facing;
+                setTimeout(() => createHitBox(player, 100, 25, true), 100);
+            }
+        }
+
+        // ==========================================
+        // 更新ループ
+        // ==========================================
+        function update() {
+            if(state.scene !== 'playing') return;
+
+            updateChar(player, true);
+            updateAI(enemy);
+            updateChar(enemy, false);
+
+            updateProjectiles();
+            updateParticles();
+
+            if(state.shake > 0) state.shake *= 0.9;
+            if(state.shake < 0.5) state.shake = 0;
+            if(state.flash > 0) state.flash--;
+
+            if(state.frameCount % 60 === 0 && state.timer > 0) {
+                state.timer--;
+                document.getElementById('timer').innerText = state.timer;
+                if(state.timer <= 0) endGame(false);
+            }
+            state.frameCount++;
+
+            if(player.hp <= 0) endGame(false);
+            if(enemy.hp <= 0) endGame(true);
+
+            updateUI();
+        }
+
+        function updateChar(c, isPlayer) {
+            if(c.hitTimer > 0) {
+                c.hitTimer--;
+                return;
+            }
+
+            if(c.attackTimer > 0) {
+                c.attackTimer--;
+                if(c.attackTimer === 0) c.state = 'idle';
+                c.vx *= 0.8; 
+            } else {
+                if(isPlayer) {
+                    c.vx = 0;
+                    const left = isKeyPressed('KeyA') || isKeyPressed('ArrowLeft');
+                    const right = isKeyPressed('KeyD') || isKeyPressed('ArrowRight');
+                    const up = isKeyPressed('KeyW') || isKeyPressed('ArrowUp');
+                    const down = isKeyPressed('KeyS') || isKeyPressed('ArrowDown');
+                    const guard = isKeyPressed('Space');
+                    const punch = isKeyPressed('KeyJ');
+                    const kick = isKeyPressed('KeyK');
+
+                    if(left) { c.vx = -5; c.facing = -1; c.state = 'walk'; }
+                    if(right) { c.vx = 5; c.facing = 1; c.state = 'walk'; }
+                    
+                    if(up && c.y >= GROUND_Y - 1) { 
+                        c.vy = JUMP_FORCE; 
+                        c.state = 'jump';
+                    }
+                    
+                    if(down) { c.state = 'idle'; c.vx = 0; }
+                    if(guard) { c.state = 'guard'; c.vx = 0; }
+                    
+                    if(punch && !c.prevJ) { performAttack(c, 'attack', 10, 80); }
+                    if(kick && !c.prevK) { performAttack(c, 'kick', 15, 90); }
+                    
+                    c.prevJ = punch;
+                    c.prevK = kick;
+
+                    if(c.y < GROUND_Y - 1 && c.state !== 'attack' && c.state !== 'kick' && c.state !== 'special') {
+                        c.state = 'jump';
+                    } else if(c.vx === 0 && c.y >= GROUND_Y - 1 && c.state !== 'guard' && c.attackTimer === 0) {
+                        c.state = 'idle';
+                    }
+                }
+            }
+
+            c.vy += GRAVITY;
+            c.x += c.vx;
+            c.y += c.vy;
+
+            if(c.y > GROUND_Y) {
+                c.y = GROUND_Y;
+                c.vy = 0;
+            }
+
+            if(c.x < 50) c.x = 50;
+            if(c.x > 850) c.x = 850;
+        }
+
+        function performAttack(c, type, damage, range) {
+            c.state = type;
+            c.attackTimer = 20;
+            setTimeout(() => createHitBox(c, range, damage, false), 100);
+        }
+
+        function createHitBox(attacker, range, damage, isSpecial) {
+            if(attacker.hitTimer > 0) return;
+            const target = attacker === player ? enemy : player;
+            
+            const dx = Math.abs(attacker.x - target.x);
+            const dy = Math.abs(attacker.y - target.y);
+
+            if(dx < range && dy < 50) {
+                const isBlocking = target.state === 'guard' && (attacker.x < target.x ? target.facing === -1 : target.facing === 1);
+                
+                if(isBlocking && !isSpecial) {
+                    addFloatingText("GUARD", target.x, target.y - 60, 20, "#aaa");
+                    addParticle(target.x + (Math.random()*20-10), target.y-40, '🛡️');
+                    target.sp += 5;
+                } else {
+                    target.hp -= damage;
+                    target.hitTimer = 15;
+                    target.state = 'damage';
+                    state.shake = 10;
+                    if(isSpecial) state.flash = 5;
+                    
+                    // 色分け処理
+                    // target === enemy (プレイヤーの攻撃) -> 青
+                    // target === player (敵の攻撃) -> 赤
+                    const dmgColor = (target === enemy) ? "#4af" : "#f00";
+                    addFloatingText(damage, target.x, target.y - 80, 30, dmgColor);
+                    
+                    addParticle(target.x, target.y-40, '💥');
+                    if(attacker === player) player.sp += 5;
+                }
+            }
+        }
+
+        function updateAI(e) {
+            if(e.aiTimer > 0) e.aiTimer--;
+            if(e.hitTimer > 0 || e.attackTimer > 0) return;
+
+            const dist = Math.abs(player.x - e.x);
+            e.facing = player.x < e.x ? -1 : 1;
+
+            if(e.aiTimer === 0) {
+                const rand = Math.random();
+                if(dist > 150) {
+                    e.vx = e.facing * 3;
+                    e.state = 'walk';
+                    e.aiTimer = 20;
+                    if(rand < 0.1 && e.type !== 'frog') {
+                        performAttack(e, 'attack', 10, 200); 
+                        if(e.type === 'dragon') {
+                             projectiles.push({
+                                x: e.x + 40 * e.facing, y: e.y - 40,
+                                vx: 8 * e.facing, vy: 0,
+                                emoji: '🔥', owner: 'enemy', damage: 20, life: 80
+                            });
+                        }
+                    }
+                } else {
+                    if(rand < 0.6) {
+                        performAttack(e, 'attack', 15, 100);
+                        e.aiTimer = 40;
+                    } else {
+                        e.vx = -e.facing * 2;
+                        e.state = 'walk';
+                        e.aiTimer = 30;
+                    }
+                }
+            }
+        }
+
+        function updateProjectiles() {
+            for(let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                p.angle = (p.angle || 0) + 0.2;
+
+                const target = p.owner === 'player' ? enemy : player;
+                if(Math.abs(p.x - target.x) < 40 && Math.abs(p.y - target.y + 40) < 40) {
+                    target.hp -= p.damage;
+                    target.state = 'damage';
+                    target.hitTimer = 15;
+                    addParticle(p.x, p.y, '💥');
+                    
+                    // 色分け処理
+                    const dmgColor = (target === enemy) ? "#4af" : "#f00";
+                    addFloatingText(p.damage, target.x, target.y - 80, 25, dmgColor);
+                    
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                if(p.life <= 0 || p.x < -50 || p.x > 950) {
+                    projectiles.splice(i, 1);
+                }
+            }
+        }
+
+        function updateParticles() {
+            for(let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                if(p.life <= 0) particles.splice(i, 1);
+            }
+            for(let i = texts.length - 1; i >= 0; i--) {
+                const t = texts[i];
+                t.y -= 1;
+                t.life--;
+                if(t.life <= 0) texts.splice(i, 1);
+            }
+        }
+
+        function addParticle(x, y, char) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 5,
+                vy: (Math.random() - 0.5) * 5,
+                char: char,
+                life: 30
+            });
+        }
+
+        function addFloatingText(str, x, y, size, color, life=60) {
+            texts.push({str, x, y, size, color, life, maxLife: life});
+        }
+
+        function endGame(isWin) {
+            state.scene = 'result';
+            const screen = document.getElementById('resultScreen');
+            const title = document.getElementById('res-title');
+            const aa = document.getElementById('res-aa');
+            const stats = document.getElementById('res-stats');
+            const btn = document.getElementById('nextBtn');
+            
+            screen.classList.remove('hidden');
+            document.getElementById('hud').classList.add('hidden');
+
+            if(isWin) {
+                title.innerText = "YOU WIN!";
+                title.style.color = "#fc0";
+                aa.innerText = SPRITES.rabbit.win[0];
+                stats.innerHTML = `TIME BONUS: ${state.timer * 100}<br>LIFE BONUS: ${player.hp * 50}`;
+                if(state.stage < ENEMIES_DATA.length - 1) {
+                    btn.innerText = "NEXT STAGE";
+                    btn.onclick = () => {
+                        state.stage++;
+                        startStage();
+                    };
+                } else {
+                    btn.innerText = "GAME CLEAR";
+                    btn.onclick = () => location.reload();
+                }
+            } else {
+                title.innerText = "YOU LOSE";
+                title.style.color = "#f00";
+                aa.innerText = SPRITES.rabbit.down[0];
+                stats.innerText = "TRY AGAIN?";
+                btn.innerText = "RETRY";
+                btn.onclick = () => initGame();
+            }
+        }
+
+        function updateUI() {
+            const php = document.getElementById('p-hp');
+            const psp = document.getElementById('p-sp');
+            const ehp = document.getElementById('e-hp');
+            
+            php.style.width = (player.hp / player.maxHp * 100) + "%";
+            if(player.hp < 30) php.classList.add('danger'); else php.classList.remove('danger');
+            
+            psp.style.width = (player.sp / player.maxSp * 100) + "%";
+            
+            ehp.style.width = (enemy.hp / enemy.maxHp * 100) + "%";
+            if(enemy.hp < 30) ehp.classList.add('danger'); else ehp.classList.remove('danger');
+        }
+
+        // ==========================================
+        // 描画ループ
+        // ==========================================
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            if(state.shake > 0) {
+                const dx = (Math.random() - 0.5) * state.shake;
+                const dy = (Math.random() - 0.5) * state.shake;
+                ctx.translate(dx, dy);
+            }
+
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, 650);
+            bgGrad.addColorStop(0, '#1a0a2e');
+            bgGrad.addColorStop(0.5, '#16213e');
+            bgGrad.addColorStop(1, '#0f3460');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, 900, 650);
+
+            const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, 650);
+            groundGrad.addColorStop(0, '#4a3000');
+            groundGrad.addColorStop(1, '#2d1b00');
+            ctx.fillStyle = groundGrad;
+            ctx.fillRect(0, GROUND_Y, 900, 650 - GROUND_Y);
+            
+            ctx.fillStyle = '#7a5500';
+            ctx.fillRect(0, GROUND_Y, 900, 4);
+
+            if(state.scene === 'playing') {
+                drawChar(player, SPRITES.rabbit);
+                
+                let eSprites = SPRITES[enemy.type] || SPRITES.frog;
+                drawChar(enemy, eSprites, enemy.color);
+
+                ctx.font = "24px serif";
+                ctx.textAlign = "center";
+                projectiles.forEach(p => {
+                    ctx.save();
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.angle || 0);
+                    ctx.fillText(p.emoji, 0, 0);
+                    ctx.restore();
+                });
+
+                particles.forEach(p => {
+                    ctx.globalAlpha = p.life / 30;
+                    ctx.font = "20px serif";
+                    ctx.fillText(p.char, p.x, p.y);
+                });
+                ctx.globalAlpha = 1.0;
+
+                texts.forEach(t => {
+                    ctx.globalAlpha = Math.min(1, t.life / 20);
+                    ctx.font = `bold ${t.size}px 'Courier New'`;
+                    ctx.fillStyle = t.color;
+                    ctx.strokeStyle = "black";
+                    ctx.lineWidth = 4;
+                    ctx.strokeText(t.str, t.x, t.y);
+                    ctx.fillText(t.str, t.x, t.y);
+                });
+                ctx.globalAlpha = 1.0;
+            }
+
+            if(state.flash > 0) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${state.flash * 0.2})`;
+                ctx.fillRect(0, 0, 900, 650);
+            }
+
+            ctx.restore();
+            requestAnimationFrame(draw);
+        }
+
+        function drawChar(c, spriteSet, color = "#fff") {
+            ctx.save();
+            ctx.translate(c.x, c.y);
+            
+            if(c.facing === -1) {
+                ctx.scale(-1, 1);
+            }
+
+            ctx.shadowColor = "rgba(0,0,0,0.5)";
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetY = 5;
+
+            let aaArr = spriteSet[c.state] || spriteSet.idle;
+            if(!spriteSet[c.state] && c.state === 'jump') aaArr = spriteSet.idle;
+
+            let frameIdx = Math.floor(state.frameCount / 20) % aaArr.length;
+            let aaStr = aaArr[frameIdx];
+
+            ctx.font = "14px 'Courier New', monospace";
+            ctx.fillStyle = color;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+
+            let lines = aaStr.split('\n');
+            let lineHeight = 14;
+            let totalHeight = lines.length * lineHeight;
+
+            lines.forEach((line, i) => {
+                ctx.fillText(line, 0, -totalHeight + (i * lineHeight));
+            });
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // ループ開始
+        // ==========================================
+        setInterval(update, 1000/60);
+        requestAnimationFrame(draw);
+
+    </script>
+</body>
+</html>
